@@ -11,7 +11,6 @@ from .core import *
 from . import replay
 from . import envs
 from . import run
-from . import agents
 
 __all__ = [
     k for k, v in list(locals().items())
