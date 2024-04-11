@@ -27,7 +27,6 @@ ENV PATH=$CONDA_PREFIX/bin:$PATH
 RUN $CNDA/miniconda/bin/conda clean -ya
 
 RUN pip3 install --upgrade setuptools pip
-ADD ./gym-0.19.0-py3-none-any.whl /root
 RUN pip3 install \
     tensorflow[and-cuda]==2.12.0 \
     tensorflow_probability==0.20.1 \
