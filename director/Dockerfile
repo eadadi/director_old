@@ -31,7 +31,7 @@ RUN pip3 install \
     tensorflow[and-cuda]==2.12.0 \
     tensorflow_probability==0.20.1 \
     yacs==0.1.8 \
-    tensorflow-cpu==2.12.0 \
+    gym==0.19.0 \
     ruamel.yaml==0.17.32 \
     ruamel.yaml.clib==0.2.7 \
     moviepy==1.0.3 \
@@ -59,7 +59,6 @@ RUN pip3 install \
     msgpack==1.0.7 \
     cloudpickle==1.6.0 \
     opencv-python==4.8.0.74 \
-    gym==0.19.0 \
     dm-sonnet
 
 RUN pip3 install --upgrade \
