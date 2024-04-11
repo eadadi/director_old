@@ -4,8 +4,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     git xvfb curl \
     libglu1-mesa libglu1-mesa-dev libgl1-mesa-dev libosmesa6-dev mesa-utils freeglut3 freeglut3-dev \
-    libglew2.1 libglfw3 libglfw3-dev libegl-dev zlib1g zlib1g-dev libsdl2-dev libjpeg-dev lua5.1 liblua5.1
--0-dev libffi-dev \
+    libglew2.1 libglfw3 libglfw3-dev libegl-dev zlib1g zlib1g-dev libsdl2-dev libjpeg-dev lua5.1 liblua5.1-0-dev libffi-dev \
     build-essential cmake g++ build-essential pkg-config software-properties-common gettext \
     ffmpeg patchelf swig unrar unzip zip curl wget tmux \
     && rm -rf /var/lib/apt/lists/*
