@@ -11,8 +11,7 @@ RUN apt-get update && apt-get install -y \
 
 ENV CNDA=/conda
 RUN mkdir -p $CNDA && chmod 755 $CNDA
-RUN curl -Lo $CNDA/miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-4.5.11-Linux
--x86_64.sh \
+RUN curl -Lo $CNDA/miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-4.5.11-Linux-x86_64.sh \
  && chmod +x $CNDA/miniconda.sh \
  && $CNDA/miniconda.sh -b -p $CNDA/miniconda \
  && rm $CNDA/miniconda.sh
