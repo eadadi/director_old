@@ -19,7 +19,7 @@ ENV PATH=$CNDA/miniconda/bin:$PATH
 ENV CONDA_AUTO_UPDATE_CONDA=false
 
 # Create a Python 3.8 environment
-RUN $CNDA/miniconda/bin/conda config --set ssl_verify True
+RUN $CNDA/miniconda/bin/conda config --set ssl_verify False
 RUN $CNDA/miniconda/bin/conda create -y --name py38 python=3.8 \
  && $CNDA/miniconda/bin/conda clean -ya
 ENV CONDA_DEFAULT_ENV=py38
