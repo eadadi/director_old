@@ -108,6 +108,15 @@ defaults:
   adv_slow_critic: True
   pengs_qlambda: False
   critic_type: vfunction
+  imag_horizon: 15
+  imag_unroll: True
+  horizon: 333
+  return_lambda: 0.95
+  critic_slowreg: logprob
+  slow_critic_update: 1
+  slow_critic_fraction: 0.02
+  retnorm: {impl: perc_ema, decay: 0.99, max: 1.0, perclo: 5.0, perchi: 95.0}
+  actent: 3e-4
   rewnorm_discount: False
 
   # HRL
