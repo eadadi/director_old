@@ -89,7 +89,6 @@ defaults:
   episodic: True
   discount: 0.99
   imag_discount: 0.99
-  imag_horizon: 16
   imag_unroll: True
   critic_return: gve
   actor_return: gve
