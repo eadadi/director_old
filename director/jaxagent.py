@@ -28,7 +28,9 @@ class JAXAgent(embodied.Agent):
     self.batch_size = config.batch_size
     self.batch_length = config.batch_length
     self.data_loaders = config.data_loaders
+    self.num_buffers = config.num_buffers
     self._setup()
+    self.step = step
     self.agent = agent_cls(obs_space, act_space, step, config, name='agent')
     self.rng = np.random.default_rng(config.seed)
 
@@ -90,9 +92,25 @@ class JAXAgent(embodied.Agent):
     mets = self._convert_mets(mets, self.train_devices)
     return mets
 
-  def dataset(self, generator):
-    batcher = embodied.Batcher(
-        sources=[generator] * self.batch_size,
+  def dataset(self, source, shared_memory=True):
+    """
+    Args:
+      sourse: the data source. replay object or generator
+      shared_memory: whether to use shared memory based batcher or not.
+        shared memory version eats less RAM when sequence length is long.
+        be careful - SM is only supported with the disk-based replay buffer.
+    """
+    if shared_memory:
+      batcher = embodied.BatcherSM(
+          replay=source,
+          workers=self.data_loaders,
+          batch_size=self.batch_size,
+          batch_sequence_len=self.batch_length,
+          postprocess=lambda x: self._convert_inps(x, self.train_devices),
+          prefetch_source=4, prefetch_batch=self.num_buffers)
+    else:
+      batcher = embodied.Batcher(
+        sources=[source] * self.batch_size,
         workers=self.data_loaders,
         postprocess=lambda x: self._convert_inps(x, self.train_devices),
         prefetch_source=4, prefetch_batch=1)
