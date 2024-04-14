@@ -17,7 +17,7 @@ class Greedy(nj.Module):
     if config.critic_type == 'vfunction':
       critics = {'extr': agent.VFunction(rewfn, config, name='critic')}
     elif config.critic_type == 'qfunction':
-      critics = {'extr': agent.QFunction(rewfn, config), name='critic'}
+      critics = {'extr': agent.QFunction(rewfn, config, name='critic')}
     self.ac = agent.ImagActorCritic(
         critics, {'extr': 1.0}, act_space, config, name='ac')
 
