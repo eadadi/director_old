@@ -100,7 +100,7 @@ defaults:
   actent_norm: True
   actent_perdim: True
   advnorm: {impl: mean_std, decay: 0.99, max: 1e8}
-  retnorm: {impl: std, decay: 0.999, max: 1e2}
+  retnorm: {impl: perc_ema, decay: 0.999, max: 1e2}
   scorenorm: {impl: off, decay: 0.99, max: 1e8}
   adv_slow_critic: True
   pengs_qlambda: False
