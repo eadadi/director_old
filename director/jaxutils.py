@@ -1,21 +1,24 @@
 import re
+from operator import or_, add
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
 from tensorflow_probability.substrates import jax as tfp
+from flax.core import freeze, FrozenDict
 
 from . import ninjax as nj
 
 tfd = tfp.distributions
 tree_map = jax.tree_util.tree_map
+tree_reduce = jax.tree_util.tree_reduce
 sg = lambda x: tree_map(jax.lax.stop_gradient, x)
 COMPUTE_DTYPE = jnp.float32
 
 
 def cast_to_compute(values):
-  return tree_map(lambda x: x.astype(COMPUTE_DTYPE), values)
+  return tree_map(lambda x: x.astype(COMPUTE_DTYPE) if x.dtype != jnp.complex64 else x, values)
 
 
 def parallel():
@@ -65,6 +68,30 @@ def scan(fn, inputs, start, unroll=True, modify=False):
       for i in range(len(outs[0]))]
   return carrydef.unflatten(outs)
 
+def scan2(fn, inputs, start, unroll=True, modify=False):
+  """
+  This is a slightly different version of scan. They only differ in API. 
+  To not mess with the jit, they are separate functions. 
+
+  scan is used in the recurrent-encoder sequental-only inference. 
+  scan2 is used in the non-recurrent-encoder sequential or parallel inference.
+  """
+  if not unroll:
+    return nj.scan(fn, start, inputs, modify=modify)
+  length = len(jax.tree_util.tree_leaves(inputs)[0])
+  carry = start
+  carry, out = fn(carry, tree_map(lambda x: x[0], inputs))
+  flat, outdef = jax.tree_util.tree_flatten(out)
+  outs = [flat]
+  for index in range(1, length):
+    carry, out = fn(carry, tree_map(lambda x: x[index], inputs))
+    flat, treedef = jax.tree_util.tree_flatten(out)
+    assert treedef == outdef, (treedef, outdef)
+    outs.append(flat)
+  outs = [
+      jnp.stack([carry[i] for carry in outs], 0)
+      for i in range(len(outs[0]))]
+  return carry, outdef.unflatten(outs)
 
 def symlog(x):
   return jnp.sign(x) * jnp.log(1 + jnp.abs(x))
@@ -338,36 +365,69 @@ class Moments(nj.Module):
       raise NotImplementedError(self.impl)
 
 
+def map_nested_fn(fn):
+    """Recursively apply `fn to the key-value pairs of a nested dict / pytree."""
+
+    def map_fn(nested_dict):
+        return {
+            k: (map_fn(v) if hasattr(v, "keys") else fn(k, v))
+            for k, v in nested_dict.items()
+        }
+
+    return map_fn
+
 class Optimizer(nj.Module):
 
   PARAM_COUNTS = {}
 
   def __init__(
       self, lr, opt='adam', eps=1e-5, clip=100.0, warmup=0, wd=0.0,
-      wd_pattern=r'/(w|kernel)$', lateclip=0.0):
+      wd_pattern=r'/(w|kernel)$', lateclip=0.0, layer_opts=None):
     assert opt in ('adam', 'belief', 'yogi')
     assert wd_pattern[0] not in ('0', '1')
-    # assert self.path not in self.PARAM_COUNTS
     self.PARAM_COUNTS[self.path] = None
     wd_pattern = re.compile(wd_pattern)
-    chain = []
-    if clip:
-      chain.append(optax.clip_by_global_norm(clip))
-    if opt == 'adam':
-      chain.append(optax.scale_by_adam(eps=eps))
+    default_opt = {
+      'lr': lr,
+      'opt': opt,
+      'eps': eps,
+      'clip': clip,
+      'warmup': warmup,
+      'wd': wd,
+      'wd_pattern': wd_pattern,
+      'lateclip': lateclip,
+    }
+    if layer_opts is None:
+      layer_opts = {'__default__': default_opt}
     else:
-      raise NotImplementedError(opt)
-    if lateclip:
-      chain.append(late_grad_clip(lateclip))
-    if wd:
-      chain.append(optax.additive_weight_decay(wd, lambda params: (
-          tree_map(lambda k: bool(wd_pattern.search(k)), tree_keys(params)))))
-    if warmup:
-      schedule = optax.linear_schedule(0.0, -lr, warmup)
-      chain.append(optax.inject_hyperparams(optax.scale)(schedule))
-    else:
-      chain.append(optax.scale(-lr))
-    self.opt = optax.chain(*chain)
+      layer_opts['__default__'] = default_opt
+    for k in layer_opts:
+      if k == '__default__':
+        continue
+      for arg in default_opt:
+        if arg not in layer_opts[k]:
+          layer_opts[k][arg] = default_opt[arg]
+    opts = {}
+    for key, cfgopt in layer_opts.items():
+      chain = []
+      if cfgopt['clip']:
+        chain.append(optax.clip_by_global_norm(cfgopt['clip']))
+      if cfgopt['opt'] == 'adam':
+        chain.append(optax.scale_by_adam(eps=cfgopt['eps']))
+      else:
+        raise NotImplementedError(cfgopt['opt'])
+      if cfgopt['lateclip']:
+        chain.append(late_grad_clip(cfgopt['lateclip']))
+      if cfgopt['wd']:
+        chain.append(optax.additive_weight_decay(cfgopt['wd'], lambda params: (
+            tree_map(lambda k: bool(cfgopt['wd_pattern'].search(k)), tree_keys(params)))))
+      if cfgopt['warmup']:
+        schedule = optax.linear_schedule(0.0, -cfgopt['lr'], cfgopt['warmup'])
+        chain.append(optax.inject_hyperparams(optax.scale)(schedule))
+      else:
+        chain.append(optax.scale(-cfgopt['lr']))
+      opts[key] = optax.chain(*chain)
+    self.opt = optax.multi_transform(opts, map_nested_fn(lambda k, _: k if k in layer_opts else "__default__"))
     self.step = nj.Variable(jnp.array, 0, jnp.int32, name='step')
     self.scaling = (COMPUTE_DTYPE == jnp.float16)
     if self.scaling:
@@ -390,7 +450,7 @@ class Optimizer(nj.Module):
     loss, params, grads, aux = nj.grad(
         wrapped, modules, has_aux=True)(*args, **kwargs)
     if not self.PARAM_COUNTS[self.path]:
-      count = sum([np.prod(x.shape) for x in params.values()])
+      count = tree_reduce(add, tree_map(lambda x: np.prod(x.shape), params))
       print(f'Optimizer {self.name} has {count:,} variables.')
       self.PARAM_COUNTS[self.path] = count
     if parallel():
@@ -400,16 +460,49 @@ class Optimizer(nj.Module):
       finite = self._update_scale(grads)
       metrics[f'{self.name}_grad_scale'] = self.grad_scale.read()
       metrics[f'{self.name}_grad_overflow'] = (~finite).astype(jnp.float32)
+    flax_modules = [k for k in grads if isinstance(grads[k], FrozenDict)]
+    if len(flax_modules) != 0:
+      for fl in flax_modules:
+        grads[fl] = grads[fl].unfreeze()
+        params[fl] = params[fl].unfreeze()
+    if len(flax_modules) != 0:
+      for fl in flax_modules:
+        grad = grads[fl]
+        for k in grad:
+          if k == 'params':
+            continue
+          grad[k] = tree_map(lambda x: x * 0., grad[k]) # this is ok, we just drop "buffers"
     optstate = self.get('state', self.opt.init, params)
     updates, optstate = self.opt.update(grads, optstate, params)
     self.put('state', optstate)
-    nj.context().update(optax.apply_updates(params, updates))
+    updated = optax.apply_updates(params, updates)
+    if len(flax_modules) != 0:
+      for fl in flax_modules:
+        updated[fl] = freeze(updated[fl])
+    nj.context().update(updated)
+    flax_norm = {fl: grads[fl]['params'] for fl in flax_modules}
+    flax_norm = optax.global_norm(flax_norm)
     norm = optax.global_norm(grads)
+    if len(flax_modules) != 0:
+      flax_grads_names = tree_keys(grads[flax_modules[0]])
+      flax_norms = {k: v for k, v in zip(jax.tree_util.tree_flatten(flax_grads_names)[0], 
+                                         jax.tree_util.tree_flatten(grads[flax_modules[0]])[0])}
+      complex_params = [k for k in flax_norms if k.endswith('B') or k.endswith('C')] 
+      for k in complex_params:
+          flax_norms[k + '_re'] = flax_norms[k][..., 0]
+          flax_norms[k + '_im'] = flax_norms[k][..., 1]
+          del flax_norms[k]
+      flax_norms = {k: jnp.sqrt(jnp.sum(v * v)) for k, v in flax_norms.items()}
+    else:
+      flax_norms = {}
     if self.scaling:
       norm = jnp.where(jnp.isfinite(norm), norm, jnp.nan)
+      flax_norm = jnp.where(jnp.isfinite(flax_norm), flax_norm, jnp.nan)
     self.step.write(self.step.read() + jnp.isfinite(norm).astype(jnp.int32))
     metrics['loss'] = loss.mean()
     metrics['grad_norm'] = norm
+    metrics['flax_norm'] = flax_norm
+    metrics.update(flax_norms)
     metrics['grad_steps'] = self.step.read()
     metrics = {f'{self.name}_{k}': v for k, v in metrics.items()}
     return (metrics, aux) if has_aux else metrics
@@ -445,7 +538,11 @@ def tree_keys(params, prefix=''):
         k: tree_keys(v, prefix + '/' + k.lstrip('/'))
         for k, v in params.items()})
   elif isinstance(params, (tuple, list)):
-    return [tree_keys(x, prefix) for x in params]
+    ret = [tree_keys(x, prefix) for x in params]
+    if len(ret) != 0:
+      return ret
+    else:
+      return prefix
   elif isinstance(params, jnp.ndarray):
     return prefix
   else:
