@@ -18,7 +18,7 @@ class Hierarchy(nj.Module):
     self.config = config
     self.extr_reward = lambda traj: self.wm.heads['reward'](traj).mean()[1:]
     self.skill_space = embodied.Space(
-        jnpint32 if config.goal_encoder.dist == 'onehot' else jnpfloat32,
+        jnp.int32 if config.goal_encoder.dist == 'onehot' else jnp.float32,
         config.skill_shape)
 
     wconfig = config.update({
@@ -419,7 +419,7 @@ class Hierarchy(nj.Module):
       # N val K val B val F... -> K val (N B) val F...
       val = val.transpose([1, 0] + list(range(2, len(val.shape))))
       val = val.reshape(
-          [val.shape[0], jnpprod(val.shape[1:3])] + val.shape[3:])
+          [val.shape[0], jnp.prod(val.shape[1:3])] + val.shape[3:])
       val = val[1:] if 'reward' in key else val
       traj[key] = val
     # Bootstrap sub trajectory against current not next goal.
