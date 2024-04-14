@@ -27,9 +27,9 @@ class Hierarchy(nj.Module):
         'critic.inputs': self.config.worker_inputs,
     })
     self.worker = agent.ImagActorCritic({
-        'extr': agent.VFunction(lambda s: s['reward_extr'], wconfig),
-        'expl': agent.VFunction(lambda s: s['reward_expl'], wconfig),
-        'goal': agent.VFunction(lambda s: s['reward_goal'], wconfig),
+        'extr': agent.VFunction(lambda s: s['reward_extr'], wconfig, name='ac_worker_extr'),
+        'expl': agent.VFunction(lambda s: s['reward_expl'], wconfig, name='ac_worker_expl'),
+        'goal': agent.VFunction(lambda s: s['reward_goal'], wconfig, name='ac_worker_goal'),
     }, config.worker_rews, act_space, wconfig, name='ac')
 
     mconfig = config.update({
@@ -37,9 +37,9 @@ class Hierarchy(nj.Module):
         'actent.target': config.manager_actent,
     })
     self.manager = agent.ImagActorCritic({
-        'extr': agent.VFunction(lambda s: s['reward_extr'], mconfig),
-        'expl': agent.VFunction(lambda s: s['reward_expl'], mconfig),
-        'goal': agent.VFunction(lambda s: s['reward_goal'], mconfig),
+        'extr': agent.VFunction(lambda s: s['reward_extr'], mconfig, name='ac_manager_extr'),
+        'expl': agent.VFunction(lambda s: s['reward_expl'], mconfig, name='ac_manager_expl'),
+        'goal': agent.VFunction(lambda s: s['reward_goal'], mconfig, name='ac_manager_goal'),
     }, config.manager_rews, self.skill_space, mconfig, name='ac')
 
     if self.config.expl_rew == 'disag':
