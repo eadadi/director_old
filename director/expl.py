@@ -20,36 +20,24 @@ class Disag(nj.Module):
         for i in range(self.config.disag_models)]
 
   def __call__(self, traj):
-    self._build(traj)
-    inputs = self.inputs(traj)
-    preds = [head(inputs).mode() for head in self.nets]
-    disag = jnp.math.reduce_std(preds, 0).mean(-1)
-    if 'action' in self.config.disag_head.inputs:
-      return disag[:-1]
-    else:
-      return disag[1:]
+    inp = self.inputs(traj)
+    preds = jnp.array([net(inp).mode() for net in self.nets])
+    return preds.std(0).mean(-1)[1:]
 
   def train(self, data):
-    # TODO: This can be removed once we change the action alignment in the
-    # replay buffer.
-    data = {**data, 'action': jnp.concat(
-        [data['action'][:, 1:], 0 * data['action'][:, :1]], 1)}
-    self._build(data)
-    inputs = self.inputs(data)[:, :-1]
-    target = self.target(data)[:, 1:].astype(jnp.float32)
-    with jnp.GradientTape() as tape:
-      preds = [head(inputs) for head in self.nets]
-      loss = -sum([pred.log_prob(target).mean() for pred in preds])
-    return self.opt(tape, loss, self.nets)
+    return self.opt(self.nets, self.loss, data)
 
-  def _build(self, data):
-    if not self.nets:
-      self.nets = [
-          nets.MLP(self.target(data).shape[-1], **self.config.disag_head)
-          for _ in range(self.config.disag_models)]
+  def loss(self, data):
+    inp = sg(self.inputs(data)[:, :-1])
+    tar = sg(self.target(data)[:, 1:])
+    losses = []
+    for net in self.nets:
+      net._shape = tar.shape[2:]
+      losses.append(-net(inp).log_prob(tar).mean())
+    return jnp.array(losses).sum()
 
 
-class LatentVAE(tfutils.Module):
+class LatentVAE(nj.Module):
 
   def __init__(self, wm, act_space, config):
     self.config = config
@@ -57,13 +45,13 @@ class LatentVAE(tfutils.Module):
     self.dec = nets.MLP(self.config.rssm.deter, **self.config.expl_dec)
     shape = self.config.expl_enc.shape
     if self.config.expl_enc.dist == 'onehot':
-      self.prior = tfutils.OneHotDist(jnp.zeros(shape))
+      self.prior = jaxutils.OneHotDist(jnp.zeros(shape))
       self.prior = tfd.Independent(self.prior, len(shape) - 1)
     else:
       self.prior = tfd.Normal(jnp.zeros(shape), jnp.ones(shape))
       self.prior = tfd.Independent(self.prior, len(shape))
-    self.kl = tfutils.AutoAdapt(**self.config.expl_kl)
-    self.opt = tfutils.Optimizer('disag', **self.config.expl_opt)
+    self.kl = jaxutils.AutoAdapt(**self.config.expl_kl)
+    self.opt = jaxutils.Optimizer('disag', **self.config.expl_opt)
     self.flatten = lambda x: x.reshape(
         x.shape[:-len(shape)] + [np.prod(x.shape[len(shape):])])
 
@@ -95,14 +83,14 @@ class LatentVAE(tfutils.Module):
     return metrics
 
 
-class CtrlDisag(tfutils.Module):
+class CtrlDisag(jaxutils.Module):
 
   def __init__(self, wm, act_space, config):
     self.disag = Disag(
         wm, act_space, config.update({'disag_target': ['ctrl']}))
     self.embed = nets.MLP((config.ctrl_size,), **config.ctrl_embed)
     self.head = nets.MLP(act_space.shape, **config.ctrl_head)
-    self.opt = tfutils.Optimizer('ctrl', **config.ctrl_opt)
+    self.opt = jaxutils.Optimizer('ctrl', **config.ctrl_opt)
 
   def __call__(self, traj):
     return self.disag(traj)
@@ -118,7 +106,7 @@ class CtrlDisag(tfutils.Module):
     return metrics
 
 
-class PBE(tfutils.Module):
+class PBE(jaxutils.Module):
 
   def __init__(self, wm, act_space, config):
     self.config = config
