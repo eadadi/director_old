@@ -5,8 +5,6 @@ import warnings
 import embodied
 import numpy as np
 
-from . import dmc
-
 
 class LocoNav(embodied.Env):
 
@@ -18,13 +16,13 @@ class LocoNav(embodied.Env):
   def __init__(
       self, name, repeat=1, size=(64, 64), camera=-1, again=False,
       termination=False, weaker=1.0):
+    # TODO: This env variable is meant for headless GPU machines but may fail
+    # on CPU-only machines.
     if name.endswith('hz'):
       name, freq = name.rsplit('_', 1)
       freq = int(freq.strip('hz'))
     else:
       freq = 50
-    if freq != 50:
-      print(f'Using non-standard control frequency {freq} Hz.')
     if 'MUJOCO_GL' not in os.environ:
       os.environ['MUJOCO_GL'] = 'egl'
     from dm_control import composer
@@ -55,7 +53,8 @@ class LocoNav(embodied.Env):
     env = composer.Environment(
         time_limit=60, task=task, random_state=None,
         strip_singleton_obs_buffer_dim=True)
-    self._env = dmc.DMC(env, repeat, size, camera)
+    from . import dmc
+    self._env = dmc.DMC(env, repeat, size=size, camera=camera)
     self._visited = None
     self._weaker = weaker
 
@@ -78,7 +77,8 @@ class LocoNav(embodied.Env):
       obs = self._env.step(action)
     if obs['is_first']:
       self._visited = set()
-    global_pos = self._walker.get_pose(self._env._env._physics)[0].reshape(-1)
+    global_pos = self._walker.get_pose(
+        self._env._dmenv._physics)[0].reshape(-1)
     self._visited.add(tuple(np.round(global_pos[:2]).astype(int).tolist()))
     obs['log_coverage'] = len(self._visited)
     return obs
@@ -88,8 +88,8 @@ class LocoNav(embodied.Env):
       from dm_control.locomotion.walkers import ant
       return ant.Ant()
     elif name == 'quadruped':
-      from . import quadruped
-      return quadruped.Quadruped()
+      from . import loconav_quadruped
+      return loconav_quadruped.Quadruped()
     else:
       raise NotImplementedError(name)
 
