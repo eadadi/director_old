@@ -1,7 +1,8 @@
 import jax.numpy as jnp
 from tensorflow_probability.substrates import jax as tfp
 tfd = tfp.distributions
-
+import tensorflow as tf
+import functools
 import embodied
 
 from . import agent
@@ -29,7 +30,7 @@ class Hierarchy(nj.Module):
         'extr': agent.VFunction(lambda s: s['reward_extr'], wconfig),
         'expl': agent.VFunction(lambda s: s['reward_expl'], wconfig),
         'goal': agent.VFunction(lambda s: s['reward_goal'], wconfig),
-    }, config.worker_rews, act_space, wconfig)
+    }, config.worker_rews, act_space, wconfig, name='ac')
 
     mconfig = config.update({
         'actor_grad_cont': 'reinforce',
@@ -39,7 +40,7 @@ class Hierarchy(nj.Module):
         'extr': agent.VFunction(lambda s: s['reward_extr'], mconfig),
         'expl': agent.VFunction(lambda s: s['reward_expl'], mconfig),
         'goal': agent.VFunction(lambda s: s['reward_goal'], mconfig),
-    }, config.manager_rews, self.skill_space, mconfig)
+    }, config.manager_rews, self.skill_space, mconfig, name='ac')
 
     if self.config.expl_rew == 'disag':
       self.expl_reward = expl.Disag(wm, act_space, config)
