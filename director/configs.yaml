@@ -202,7 +202,6 @@ dmlab:
   task: dmlab_rooms_collect_good_objects_train
   encoder: {mlp_keys: 'reward', cnn_keys: 'image'}
   decoder: {mlp_keys: '$^', cnn_keys: 'image'}
-  env.repeat: 4
   train.steps: 5e7
 
 atari:
@@ -226,14 +225,12 @@ dmc_vision:
   task: dmc_walker_walk
   encoder: {mlp_keys: '$^', cnn_keys: 'image'}
   decoder: {mlp_keys: '$^', cnn_keys: 'image'}
-  env.repeat: 1
 
 dmc_proprio:
 
   task: dmc_walker_walk
   encoder: {mlp_keys: '.*', cnn_keys: '$^'}
   decoder: {mlp_keys: '.*', cnn_keys: '$^'}
-  env.repeat: 1
 
 pinpad:
 
