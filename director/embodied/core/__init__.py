@@ -14,12 +14,10 @@ from .flags import Flags
 from .logger import Logger
 from .parallel import Parallel
 from .timer import Timer
-from .convert import convert
 from .worker import Worker
-from .batcher import Batcher, BatcherSM
+from .batcher import Batcher
 from .metrics import Metrics
 from .uuid import uuid
-from .prefetch import Prefetch
 
 from .batch import BatchEnv
 from .random import RandomAgent

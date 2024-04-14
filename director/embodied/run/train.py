@@ -2,21 +2,18 @@ import re
 
 import embodied
 import numpy as np
-import jax
 
 
-def train(agent, env, replay, logger, args, config):
+def train(agent, env, replay, logger, args):
 
   logdir = embodied.Path(args.logdir)
   logdir.mkdirs()
   print('Logdir', logdir)
   should_expl = embodied.when.Until(args.expl_until)
-  should_report = embodied.when.Every(1000000)
   should_train = embodied.when.Ratio(args.train_ratio / args.batch_steps)
   should_log = embodied.when.Clock(args.log_every)
   should_save = embodied.when.Clock(args.save_every)
   should_sync = embodied.when.Every(args.sync_every)
-  should_profile = args.profile_path != 'none'
   step = logger.step
   updates = embodied.Counter()
   metrics = embodied.Metrics()
@@ -62,31 +59,21 @@ def train(agent, env, replay, logger, args, config):
   driver.on_step(lambda tran, _: step.increment())
   driver.on_step(replay.add)
 
-  replay.maybe_restore()
-
   print('Prefill train dataset.')
   random_agent = embodied.RandomAgent(env.act_space)
-  while len(replay) < max(args.batch_steps * config.envs.amount, args.train_fill):
+  while len(replay) < max(args.batch_steps, args.train_fill):
     driver(random_agent.policy, steps=100)
   logger.add(metrics.result())
   logger.write()
 
-  if config.replay == 'lfs':
-    dataset = agent.dataset(replay, shared_memory=True)
-  elif config.replay == 'uniform':
-    dataset = agent.dataset(replay.dataset, shared_memory=False)
+  dataset = agent.dataset(replay.dataset)
   state = [None]  # To be writable from train step function below.
   batch = [None]
   def train_step(tran, worker):
     for _ in range(should_train(step)):
       with timer.scope('dataset'):
         batch[0] = next(dataset)
-      if should_profile:
-        jax.profiler.start_trace(f"{args.profile_path}/{step.value}")
-        print(f'profiling step {step}')
       outs, state[0], mets = agent.train(batch[0], state[0])
-      if should_profile:
-        jax.profiler.stop_trace()
       metrics.add(mets, prefix='train')
       if 'priority' in outs:
         replay.prioritize(outs['key'], outs['priority'])
@@ -98,15 +85,13 @@ def train(agent, env, replay, logger, args, config):
       report = agent.report(batch[0])
       report = {k: v for k, v in report.items() if 'train/' + k not in agg}
       logger.add(agg)
-      # TODO: do this rarely
-      if should_report(step):
-        logger.add(report, prefix='report')
+      logger.add(report, prefix='report')
       logger.add(replay.stats, prefix='replay')
       logger.add(timer.stats(), prefix='timer')
       logger.write(fps=True)
   driver.on_step(train_step)
-  
-  checkpoint = embodied.Checkpoint(logdir / 'checkpoint.ckpt', parallel=False)
+
+  checkpoint = embodied.Checkpoint(logdir / 'checkpoint.ckpt')
   timer.wrap('checkpoint', checkpoint, ['save', 'load'])
   checkpoint.step = step
   checkpoint.agent = agent
@@ -122,9 +107,5 @@ def train(agent, env, replay, logger, args, config):
   while step < args.steps:
     driver(policy, steps=100)
     if should_save(step):
-      try:
-        checkpoint.save()
-      except:
-        print('saving failed')
-        pass
+      checkpoint.save()
   logger.write()

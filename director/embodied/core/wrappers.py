@@ -2,9 +2,7 @@ import functools
 import time
 
 import numpy as np
-import os
 
-from filelock import FileLock
 from . import base
 from . import space as spacelib
 
@@ -43,10 +41,9 @@ class ActionRepeat(base.Wrapper):
   def __init__(self, env, repeat):
     super().__init__(env)
     self._repeat = repeat
-    self._done = False
 
   def step(self, action):
-    if action['reset'] or self._done:
+    if action['reset']:
       return self.env.step(action)
     reward = 0.0
     for _ in range(self._repeat):
@@ -55,7 +52,6 @@ class ActionRepeat(base.Wrapper):
       if obs['is_last'] or obs['is_terminal']:
         break
     obs['reward'] = np.float32(reward)
-    self._done = obs['is_last']
     return obs
 
 
@@ -364,19 +360,3 @@ class RestartOnException(base.Wrapper):
       self.env = self._ctor()
       action['reset'] = np.ones_like(action['reset'])
       return self.env.step(action)
-
-class CountSteps(base.Wrapper):
-
-  def __init__(self, env):
-    super().__init__(env)
-    self.counter = 0
-    self.eps_id = 0
-
-  def step(self, action):
-    obs = self.env.step(action)
-    if obs['is_last']:
-      self.counter = 0
-    else:
-      self.counter += 1
-    obs['step_no'] = self.counter
-    return obs

@@ -18,24 +18,12 @@ import tqdm
 
 TITLES = {
     'dmlab_explore_goal_locations_small': 'DMLab Goals Small',
-    'dmlab_rooms_select_nonmatching_object': 'DMLab Nonmatching',
-    'dmlab_rooms_watermaze': 'DMLab Watermaze',
-    'dmlab_natlab_fixed_large_map': 'Natlab Large',
-    'dmlab_natlab_varying_map_randomized': 'Natlab Randomized',
-    'dmlab_lasertag_three_opponents_small': 'DMLab Lasertag 3 Small',
-    'dmlab_rooms_exploit_deferred_effects_test': 'DMLab Deferred Effects',
-    'dmlab_explore_object_locations_small': 'DMLab Apples Small',
-    'dmlab_explore_object_locations_large': 'DMLab Apples Large',
-    'dmlab_explore_object_rewards_few': 'DMLab Objects Few',
-    'dmlab_explore_object_rewards_many': 'DMLab Objects Many',
-    'dmlab_rooms_collect_good_objects_test': 'DMLab Collect Good',
     'crafter_reward': 'Crafter',
     'pinpad2_three': 'Pin Pad Three',
     'pinpad2_four': 'Pin Pad Four',
     'pinpad2_five': 'Pin Pad Five',
     'pinpad2_six': 'Pin Pad Six',
     'pinpad2_eight': 'Pin Pad Eight',
-    'hrlgrid_16': 'Grid World 16',
     'loconav_ant_maze_s_50hz': 'Ant Maze S',
     'loconav_ant_maze_m_50hz': 'Ant Maze M',
     'loconav_ant_maze_l_50hz': 'Ant Maze L',
@@ -47,6 +35,8 @@ COLORS = {
         '#0022ff', '#33aa00', '#ff0011', '#ddaa00', '#cc44dd', '#0088aa',
         '#001177', '#117700', '#990022', '#885500', '#553366', '#006666'),
     'gradient': (
+        '#a0da39', '#4ac16d', '#277f8e', '#365c8d', '#46327e', '#440154'),
+    'gradient_more': (
         '#fde725', '#a0da39', '#4ac16d', '#1fa187', '#277f8e', '#365c8d',
         '#46327e', '#440154'),
 }
@@ -65,12 +55,12 @@ def main():
   tasks = []
   for regex in args.tasks:
     found = [x['task'] for x in runs if re.search(regex, x['task'])]
-    [tasks.append(x) for x in sorted(found) if x not in tasks]
+    [tasks.append(x) for x in natsort(found) if x not in tasks]
   methods = []
   for regex in args.methods:
     found = [x['method'] for x in runs if re.search(regex, x['method'])]
-    [methods.append(x) for x in sorted(found) if x not in methods]
-  seeds = sorted(set(run['seed'] for run in runs))
+    [methods.append(x) for x in natsort(found) if x not in methods]
+  seeds = natsort(set(run['seed'] for run in runs))
   console.print(f'Tasks ({len(tasks)}): [cyan]{", ".join(tasks)}[/cyan]')
   console.print(f'Methods ({len(methods)}): [cyan]{", ".join(methods)}[/cyan]')
   console.print(f'Seed ({len(seeds)}): [cyan]{", ".join(seeds)}[/cyan]')
@@ -81,6 +71,8 @@ def main():
 
   if args.stats:
     print('Computing stats...', flush=True)
+    len(tasks) == 1 and 'mean' in args.stats and args.stats.remove('mean')
+    len(tasks) == 1 and 'median' in args.stats and args.stats.remove('median')
     extra_runs, extra_tasks = compute_stats(runs, args.stats, args.bins)
     runs += extra_runs
     tasks += extra_tasks
@@ -175,6 +167,21 @@ def compute_stats(runs, stats, bins):
       maxs = select(baselines, 'human_gamer')
       extra_runs += stats_fixed_norm(
           runs, bins, mins, maxs, 'gamer_median', np.nanmedian)
+    elif stats == 'atari_record':
+      path = pathlib.Path('~/scores/atari_baselines.json').expanduser()
+      baselines = json.loads(path.read_text())
+      mins = select(baselines, 'random')
+      maxs = select(baselines, 'human_record')
+      extra_runs += stats_fixed_norm(
+          runs, bins, mins, maxs, 'record_mean', np.nanmean)
+    elif stats == 'atari_record_clip':
+      path = pathlib.Path('~/scores/atari_baselines.json').expanduser()
+      baselines = json.loads(path.read_text())
+      mins = select(baselines, 'random')
+      maxs = select(baselines, 'human_record')
+      extra_runs += stats_fixed_norm(
+          runs, bins, mins, maxs, 'record_mean_clip',
+          lambda x, a: np.nanmean(np.minimum(x, 1), a))
     elif stats == 'dmlab_mean':
       path = pathlib.Path('~/scores/dmlab_baselines.json').expanduser()
       baselines = json.loads(path.read_text())
@@ -182,16 +189,16 @@ def compute_stats(runs, stats, bins):
       maxs = select(baselines, 'human')
       extra_runs += stats_fixed_norm(
           runs, bins, mins, maxs, 'human_mean',
-          lambda vals, axis: np.nanmean(np.minimum(vals, 100), axis))
+          lambda vals, axis: np.nanmean(np.minimum(vals, 1), axis))
     else:
       raise NotImplementedError(stats)
-  extra_tasks = sorted(set(run['task'] for run in extra_runs))
+  extra_tasks = natsort(set(run['task'] for run in extra_runs))
   return extra_runs, extra_tasks
 
 
 def stats_self_norm(runs, bins, name='mean', aggregator=np.nanmean):
-  methods = sorted(set(run['method'] for run in runs))
-  seeds = sorted(set(run['seed'] for run in runs))
+  methods = natsort(set(run['method'] for run in runs))
+  seeds = natsort(set(run['seed'] for run in runs))
   lengths, mins, maxs = {}, {}, {}
   for run in runs:
     lengths[run['task']] = max(lengths.get(run['task'], 0), max(run['xs']))
@@ -216,10 +223,10 @@ def stats_self_norm(runs, bins, name='mean', aggregator=np.nanmean):
           continue
         _, ys = binning(
             run['xs'], run['ys'], borders[task], np.nanmean, fill='last')
-        scores.append(100 * (ys - mins[task]) / (maxs[task] - mins[task]))
+        scores.append((ys - mins[task]) / (maxs[task] - mins[task]))
       if scores:
         scores = np.array(scores)
-        xs = np.linspace(1, 100, len(scores[0]))
+        xs = np.linspace(0, 1, len(scores[0]))
         extra_runs.append({
             'task': f'stats_normalized_{name}', 'method': method, 'seed': seed,
             'xs': xs, 'ys': reduce(scores, aggregator, 0)})
@@ -228,8 +235,8 @@ def stats_self_norm(runs, bins, name='mean', aggregator=np.nanmean):
 
 def stats_fixed_norm(
     runs, bins, mins, maxs, name='mean', aggregator=np.nanmean):
-  methods = sorted(set(run['method'] for run in runs))
-  seeds = sorted(set(run['seed'] for run in runs))
+  methods = natsort(set(run['method'] for run in runs))
+  seeds = natsort(set(run['seed'] for run in runs))
   lengths = {}
   for run in runs:
     lengths[run['task']] = max(lengths.get(run['task'], 0), max(run['xs']))
@@ -250,9 +257,11 @@ def stats_fixed_norm(
         task = run['task']
         _, ys = binning(
             run['xs'], run['ys'], borders[task], np.nanmean, fill='last')
-        scores.append(100 * (ys - mins[task]) / (maxs[task] - mins[task]))
+        if task == 'atari_jamesbond' and 'atari_james_bond' in mins:
+          task = 'atari_james_bond'
+        scores.append((ys - mins[task]) / (maxs[task] - mins[task]))
       if scores:
-        xs = np.linspace(1, 100, len(scores[0]))
+        xs = np.linspace(0, 1, len(scores[0]))
         extra_runs.append({
             'task': f'stats_{name}', 'method': method, 'seed': seed,
             'xs': xs, 'ys': reduce(scores, aggregator, 0)})
@@ -260,8 +269,8 @@ def stats_fixed_norm(
 
 
 def stats_num_tasks(runs, bins):
-  methods = sorted(set(run['method'] for run in runs))
-  seeds = sorted(set(run['seed'] for run in runs))
+  methods = natsort(set(run['method'] for run in runs))
+  seeds = natsort(set(run['seed'] for run in runs))
   lengths = {}
   for run in runs:
     lengths[run['task']] = max(lengths.get(run['task'], 0), max(run['xs']))
@@ -284,7 +293,7 @@ def stats_num_tasks(runs, bins):
             run['xs'], run['ys'], borders[task], np.nanmean, fill='nan')
         nonempty.append(np.isfinite(ys))
       if nonempty:
-        xs = np.linspace(1, 100, len(nonempty[0]))
+        xs = np.linspace(0, 1, len(nonempty[0]))
         extra_runs.append({
             'task': 'stats_number_of_tasks', 'method': method, 'seed': seed,
             'xs': xs, 'ys': np.sum(nonempty, 0)})
@@ -411,13 +420,13 @@ def legend(fig, mapping=None, adjust=False, **kwargs):
 
 
 def smart_format(x, pos=None):
-  if x < 1e3:
+  if abs(x) < 1e3:
     if float(int(x)) == float(x):
       return str(int(x))
-    return str(x)
-  if x < 1e6:
+    return str(round(x, 10)).rstrip('0')
+  if abs(x) < 1e6:
     return f'{x/1e3:.0f}K' if x == x // 1e3 * 1e3 else f'{x/1e3:.1f}K'
-  if x < 1e9:
+  if abs(x) < 1e9:
     return f'{x/1e6:.0f}M' if x == x // 1e6 * 1e6 else f'{x/1e6:.1f}M'
   return f'{x/1e9:.0f}B' if x == x // 1e9 * 1e9 else f'{x/1e9:.1f}B'
 
@@ -460,12 +469,18 @@ def reduce(values, reducer=np.nanmean, *args, **kwargs):
     return reducer(values, *args, **kwargs)
 
 
+def natsort(sequence):
+  pattern = re.compile(r'([0-9]+)')
+  return sorted(sequence, key=lambda x: [
+      (int(y) if y.isdigit() else y) for y in pattern.split(x)])
+
+
 def parse_args(argv=None):
   boolean = lambda x: bool(['False', 'True'].index(x))
   parser = argparse.ArgumentParser()
   parser.add_argument('--indirs', nargs='+', type=pathlib.Path, required=True)
   parser.add_argument('--outdir', type=pathlib.Path, required=True)
-  parser.add_argument('--pattern', type=str, default='**/metrics.jsonl')
+  parser.add_argument('--pattern', type=str, default='**/scores.jsonl')
   parser.add_argument('--prefix', type=boolean, default=False)
   parser.add_argument('--xaxis', type=str, default='step')
   parser.add_argument('--yaxis', type=str, default='episode/score')
@@ -499,6 +514,8 @@ def parse_args(argv=None):
       else:
         cmap = args.colors
       args.colors = lambda i: cmap[i % len(cmap)]
+  if args.stats == ['none']:
+    args.stats = []
   return args
 
 

@@ -35,7 +35,6 @@ class NaiveChunks(embodied.Replay):
     return {'size': len(self), 'chunks': len(self.buffers)}
 
   def add(self, step, worker=0):
-    step = {k: v for k, v in step.items() if not k.startswith('log_')}
     chunk = self.ongoing[worker]
     chunk.append(step)
     if len(chunk) >= self.chunks:

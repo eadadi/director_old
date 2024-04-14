@@ -42,12 +42,6 @@ class Generic:
   def __len__(self):
     return len(self.table)
 
-  def set_agent(self, agent):
-    """
-    Placeholder method for API compatibility with the other buffer 
-    """
-    pass
-
   @property
   def stats(self):
     ratio = lambda x, y: x / y if y else np.nan
@@ -138,9 +132,6 @@ class Generic:
     #     # 'sampler': self.sampler.save(wait),
     #     # 'limiter': self.limiter.save(wait),
     # }
-
-  def maybe_restore(self):
-    self.load()
 
   def load(self, data=None):
     if not self.saver:

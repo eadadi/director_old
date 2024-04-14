@@ -1,7 +1,5 @@
 import sys
 import time
-import logging
-import threading
 from collections import defaultdict
 
 import embodied
@@ -40,7 +38,6 @@ def actor(step, agent, replay, logger, actor_addr, args):
   initial = embodied.treemap(lambda x: x[0], initial)
   allstates = defaultdict(lambda: initial)
   agent.sync()
-  # step.t = 0
 
   def callback(obs, env_addrs):
     states = [allstates[a] for a in env_addrs]
@@ -55,18 +52,13 @@ def actor(step, agent, replay, logger, actor_addr, args):
       tran = {k: v[i].copy() for k, v in trans.items()}
       replay.add(tran.copy(), worker=a)
       [scalars[a][k].append(v) for k, v in tran.items() if v.size == 1]
-      [videos[a][k].append(tran[k]) for k in args.log_keys_video if k in tran]
+      [videos[a][k].append(tran[k]) for k in args.log_keys_video]
     step.increment(args.actor_batch)
-    # print(f'fps: {args.actor_batch / (time.time() - step.t):.3f}')
-    # step.t = time.time()
-
-
 
     for i, a in enumerate(env_addrs):
       if not trans['is_last'][i]:
         continue
-      vids = videos.pop(a) if a in videos else {}
-      ep = {**scalars.pop(a), **vids}
+      ep = {**scalars.pop(a), **videos.pop(a)}
       ep = {k: embodied.convert(v) for k, v in ep.items()}
       logger.add({
           'length': len(ep['reward']) - 1,
@@ -74,8 +66,7 @@ def actor(step, agent, replay, logger, actor_addr, args):
       }, prefix='episode')
       stats = {}
       for key in args.log_keys_video:
-        if key != 'none':
-          stats[f'policy_{key}'] = ep[key]
+        stats[f'policy_{key}'] = ep[key]
       metrics.add(stats, prefix='stats')
 
     if should_log():
@@ -89,32 +80,21 @@ def actor(step, agent, replay, logger, actor_addr, args):
 
 def learner(step, agent, replay, logger, timer, args):
   logdir = embodied.Path(args.logdir)
-  ckpt_dir = embodied.Path(args.checkpoint_dir)
   metrics = embodied.Metrics()
   should_log = embodied.when.Clock(args.log_every)
   should_save = embodied.when.Clock(args.save_every)
   should_sync = embodied.when.Every(args.sync_every)
   updates = embodied.Counter()
 
-  checkpoint = embodied.Checkpoint(ckpt_dir / 'checkpoint.ckpt')
+  checkpoint = embodied.Checkpoint(logdir / 'checkpoint.ckpt')
   checkpoint.step = step
   checkpoint.agent = agent
   checkpoint.replay = replay
-  is_set = False
-  while not is_set:
-    with replay.manager.event_lock:
-      is_set = bool(replay.manager.init_event.is_set())
-    if not is_set:
-      print('Learner is waiting for the actor to initialize the buffer..')
-      time.sleep(30)
-    
   if args.from_checkpoint:
     checkpoint.load(args.from_checkpoint)
-  checkpoint.load_or_save(filename=replay.manager.tmp_file_path)
-  # a workaround for the logger step issue when restoring 
-  logger.step.value = embodied.Counter(initial=agent.step.value)
+  checkpoint.load_or_save()
 
-  dataset = agent.dataset(replay)
+  dataset = agent.dataset(replay.dataset)
   state = None
   stats = dict(last_time=time.time(), last_step=int(step), batch_entries=0)
   while True:
@@ -145,17 +125,11 @@ def learner(step, agent, replay, logger, timer, args):
           'train_ratio': learner_fps / actor_fps if actor_fps else np.inf,
       }, prefix='parallel')
       stats = dict(last_time=time.time(), last_step=int(step), batch_entries=0)
-      try:
-          logger.write(fps=True)
-      except:
-          print('logging failed')
+
+      logger.write(fps=True)
 
     if should_save():
-      try:
-        checkpoint.save()
-      except:
-        print('saving failed')
-        pass
+      checkpoint.save()
 
 
 def env(make_env, actor_addr, i, args, timer=None):

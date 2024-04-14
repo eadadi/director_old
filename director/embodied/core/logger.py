@@ -231,16 +231,14 @@ class WandBOutput:
   def __init__(self, pattern, logdir, config):
     self._pattern = re.compile(pattern)
     import wandb
-    run = wandb.init(
-        name=config.wdb_name,
+    wandb.init(
+        project="dreamerv3",
+        name=logdir.name,
+        # sync_tensorboard=True,,
+        entity='word-bots',
         config=dict(config),
     )
     self._wandb = wandb
-    path = f'{os.environ.get("WANDB_DIR", "/tmp")}/wandb'
-    os.makedirs(path, exist_ok=True)
-    with open(f'{path}/wandb_runid.txt', 'w') as f:
-      f.write(str(run.id))
-    print(f'Wrote run id {run.id} into {os.environ.get("WANDB_DIR", "/tmp")}/wandb/wandb_runid.txt')
 
   def __call__(self, summaries):
     bystep = collections.defaultdict(dict)
@@ -265,7 +263,7 @@ class WandBOutput:
         # If the video is a float, convert it to uint8
         if np.issubdtype(value.dtype, np.floating):
           value = np.clip(255 * value, 0, 255).astype(np.uint8)
-        bystep[step][name] = wandb.Video(value, format='mp4')
+        bystep[step][name] = wandb.Video(value)
 
     for step, metrics in bystep.items():
       self._wandb.log(metrics, step=step)

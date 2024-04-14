@@ -8,13 +8,7 @@ import numpy as np
 class FromDM(embodied.Env):
 
   def __init__(self, env, obs_key='observation', act_key='action'):
-    if isinstance(env, str):
-      if env.startswith('bsuite'):
-        import bsuite
-        _, task = env.split('_', 1)
-        self._env = bsuite.load_from_id(task)
-    else:
-      self._env = env
+    self._env = env
     obs_spec = self._env.observation_spec()
     act_spec = self._env.action_spec()
     self._obs_dict = isinstance(obs_spec, dict)
@@ -39,7 +33,6 @@ class FromDM(embodied.Env):
         'is_first': embodied.Space(bool),
         'is_last': embodied.Space(bool),
         'is_terminal': embodied.Space(bool),
-        'step_no': embodied.Space(np.int32),
         **{k or self._obs_key: self._convert(v) for k, v in spec.items()},
     }
 
@@ -77,19 +70,16 @@ class FromDM(embodied.Env):
         is_first=time_step.first(),
         is_last=time_step.last(),
         is_terminal=False if time_step.first() else time_step.discount == 0,
-        **{k: v if len(v.shape) != 2 else v.flatten() for k, v in obs.items()},
+        **obs,
     )
 
   def _convert(self, space):
-    shape = space.shape
-    if len(shape) == 2:
-      shape = (shape[0] * shape[1],)
     if hasattr(space, 'num_values'):
       return embodied.Space(space.dtype, (), 0, space.num_values)
     elif hasattr(space, 'minimum'):
       assert np.isfinite(space.minimum).all(), space.minimum
       assert np.isfinite(space.maximum).all(), space.maximum
       return embodied.Space(
-          space.dtype, shape, space.minimum, space.maximum)
+          space.dtype, space.shape, space.minimum, space.maximum)
     else:
-      return embodied.Space(space.dtype, shape, None, None)
+      return embodied.Space(space.dtype, space.shape, None, None)

@@ -74,27 +74,20 @@ class Checkpoint:
     self._log and print(f'Loading checkpoint: {filename}')
     data = basics.unpack(filename.read('rb'))
     keys = tuple(data.keys() if keys is None else keys)
-    all_loaded = True
     for key in keys:
       if key.startswith('_'):
         continue
       try:
-        loaded = self._values[key].load(data[key])
-        if loaded is None:
-          loaded = True
-        all_loaded = loaded and all_loaded
+        self._values[key].load(data[key])
       except Exception:
         print(f'Error loading {key} from checkpoint.')
         raise
     if self._log:
       age = time.time() - data['_timestamp']
       print(f'Loaded checkpoint from {age:.0f} seconds ago.')
-    return all_loaded
 
-  def load_or_save(self, filename=None):
-    if self.exists(filename=filename):
-      loaded = self.load()
-      if loaded is not None and not loaded:
-        self.save()
+  def load_or_save(self):
+    if self.exists():
+      self.load()
     else:
       self.save()

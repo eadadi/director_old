@@ -34,10 +34,9 @@ class MinSize:
 
 class SamplesPerInsert:
 
-  def __init__(self, samples_per_insert, tolerance, minimum=1, unlocked=False):
+  def __init__(self, samples_per_insert, tolerance, minimum=1):
     assert 1 <= minimum
     self.samples_per_insert = samples_per_insert
-    self.unlocked = unlocked
     self.minimum = minimum
     self.avail = -minimum
     self.min_avail = -tolerance
@@ -52,15 +51,10 @@ class SamplesPerInsert:
 
   def want_insert(self):
     with self.lock:
-      if self.unlocked:
-        self.avail += self.samples_per_insert
-        self.size += 1
-        return True, 'ok'
-      else:
-        if self.avail >= self.max_avail:
-          return False, f'rate limited: {self.avail:.3f} >= {self.max_avail:.3f}'
-        self.avail += self.samples_per_insert
-        self.size += 1
+      if self.avail >= self.max_avail:
+        return False, f'rate limited: {self.avail:.3f} >= {self.max_avail:.3f}'
+      self.avail += self.samples_per_insert
+      self.size += 1
     return True, 'ok'
 
   def want_remove(self):
@@ -74,13 +68,9 @@ class SamplesPerInsert:
     with self.lock:
       if self.size < self.minimum:
         return False, f'too empty: {self.size} < {self.minimum}'
-      if self.unlocked:
-        self.avail -= 1
-        return True, 'ok'
-      else:
-        if self.avail <= self.min_avail:
-          return False, f'rate limited: {self.avail:.3f} <= {self.min_avail:.3f}'
-        self.avail -= 1
+      if self.avail <= self.min_avail:
+        return False, f'rate limited: {self.avail:.3f} <= {self.min_avail:.3f}'
+      self.avail -= 1
     return True, 'ok'
 
 
