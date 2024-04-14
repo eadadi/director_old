@@ -83,7 +83,7 @@ class LatentVAE(nj.Module):
     return metrics
 
 
-class CtrlDisag(jaxutils.Module):
+class CtrlDisag(nj.Module):
 
   def __init__(self, wm, act_space, config):
     self.disag = Disag(
