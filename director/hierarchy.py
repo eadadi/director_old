@@ -1,7 +1,6 @@
 import jax.numpy as jnp
 from tensorflow_probability.substrates import jax as tfp
 tfd = tfp.distributions
-import tensorflow as tf
 import functools
 import embodied
 
