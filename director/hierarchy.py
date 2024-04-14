@@ -1,17 +1,17 @@
-import functools
+import jax.numpy as jnp
+from tensorflow_probability.substrates import jax as tfp
+tfd = tfp.distributions
 
 import embodied
-import numpy as np
-import tensorflow as tf
-from tensorflow_probability import distributions as tfd
 
 from . import agent
 from . import expl
+from . import ninjax as nj
+from . import jaxutils
 from . import nets
-from . import tfutils
 
 
-class Hierarchy(tfutils.Module):
+class Hierarchy(nj.Module):
 
   def __init__(self, wm, act_space, config):
     self.wm = wm
@@ -54,7 +54,7 @@ class Hierarchy(tfutils.Module):
 
     shape = self.skill_space.shape
     if self.skill_space.discrete:
-      self.prior = tfutils.OneHotDist(tf.zeros(shape))
+      self.prior = jaxutils.OneHotDist(tf.zeros(shape))
       self.prior = tfd.Independent(self.prior, len(shape) - 1)
     else:
       self.prior = tfd.Normal(tf.zeros(shape), tf.ones(shape))
@@ -66,8 +66,8 @@ class Hierarchy(tfutils.Module):
         config.skill_shape, dims='context', **config.goal_encoder)
     self.dec = nets.MLP(
         self.goal_shape, dims='context', **self.config.goal_decoder)
-    self.kl = tfutils.AutoAdapt((), **self.config.encdec_kl)
-    self.opt = tfutils.Optimizer('goal', **config.encdec_opt)
+    self.kl = jaxutils.AutoAdapt((), **self.config.encdec_kl)
+    self.opt = jaxutils.Optimizer('goal', **config.encdec_opt)
 
   def initial(self, batch_size):
     return {
@@ -494,5 +494,5 @@ class Hierarchy(tfutils.Module):
       if target is not None:
         rows.append(tf.repeat(target[k].mode()[:, None], length, 1))
       rows.append(rollout[k].mode().transpose((1, 0, 2, 3, 4)))
-      videos[k] = tfutils.video_grid(tf.concat(rows, 2))
+      videos[k] = jaxutils.video_grid(tf.concat(rows, 2))
     return videos
