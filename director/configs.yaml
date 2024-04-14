@@ -52,7 +52,11 @@ defaults:
   # Agent
   task_behavior: Hierarchy
   expl_behavior: None
-  batch_size: 16
+  batch_size: 4
+  batch_length: 1024
+  data_loaders: 16
+  num_buffers: 2
+  unlocked_sampling: False
   transform_rewards: off
   expl_noise: 0.0
   eval_noise: 0.0
