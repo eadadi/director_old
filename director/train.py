@@ -3,6 +3,13 @@ import pathlib
 import sys
 import warnings
 from functools import partial as bind
+import mujoco
+import traceback
+import ruamel.yaml as yaml
+import signal
+import time
+import subprocess
+
 
 warnings.filterwarnings('ignore', '.*box bound precision lowered.*')
 warnings.filterwarnings('ignore', '.*using stateful random seeds*')
@@ -30,11 +37,18 @@ def main(argv=None):
   config = embodied.Flags(config).parse(other)
   args = embodied.Config(
       **config.run, logdir=config.logdir,
+      replay_dir=config.replay_dir,
+      checkpoint_dir=config.checkpoint_dir,
       batch_steps=config.batch_size * config.batch_length)
   print(config)
 
   logdir = embodied.Path(args.logdir)
   logdir.mkdirs()
+  if args.replay_dir == 'none':
+    replay_dir = logdir / 'replay'
+  else:
+    replay_dir = embodied.Path(args.replay_dir)
+  replay_dir.mkdirs()
   config.save(logdir / 'config.yaml')
   step = embodied.Counter()
   logger = make_logger(parsed, logdir, step, config)
@@ -43,11 +57,12 @@ def main(argv=None):
   try:
 
     if args.script == 'train':
-      replay = make_replay(config, logdir / 'replay')
+      replay = make_replay(config, replay_dir)
       env = make_envs(config)
       cleanup.append(env)
       agent = agt.Agent(env.obs_space, env.act_space, step, config)
-      embodied.run.train(agent, env, replay, logger, args)
+      replay.set_agent(agent)
+      embodied.run.train(agent, env, replay, logger, args, config)
 
     elif args.script == 'train_save':
       replay = make_replay(config, logdir / 'replay')
@@ -93,7 +108,10 @@ def main(argv=None):
       env = make_env(config)
       agent = agt.Agent(env.obs_space, env.act_space, step, config)
       env.close()
-      replay = make_replay(config, logdir / 'replay', rate_limit=True)
+      if config.replay != 'lfs':
+        raise ValueError('Only "lfs" replay is supported when training in parallel.')
+      replay = make_replay(config, replay_dir, rate_limit=True)
+      replay.set_agent(agent)
       embodied.run.parallel(
           agent, replay, logger, bind(make_env, config),
           num_envs=config.envs.amount, args=args)
@@ -111,8 +129,8 @@ def make_logger(parsed, logdir, step, config):
       embodied.logger.TerminalOutput(config.filter),
       embodied.logger.JSONLOutput(logdir, 'metrics.jsonl'),
       embodied.logger.JSONLOutput(logdir, 'scores.jsonl', 'episode/score'),
-      embodied.logger.TensorBoardOutput(logdir),
-      # embodied.logger.WandBOutput(logdir.name, config),
+      # embodied.logger.TensorBoardOutput(logdir),
+      embodied.logger.WandBOutput('.*', str(logdir), config),
       # embodied.logger.MLFlowOutput(logdir.name),
   ], multiplier)
   return logger
@@ -120,7 +138,7 @@ def make_logger(parsed, logdir, step, config):
 
 def make_replay(
     config, directory=None, is_eval=False, rate_limit=False, **kwargs):
-  assert config.replay == 'uniform' or not rate_limit
+  assert config.replay in ['uniform', 'lfs'] or not rate_limit
   length = config.batch_length
   size = config.replay_size // 10 if is_eval else config.replay_size
   if config.replay == 'uniform' or is_eval:
@@ -134,6 +152,18 @@ def make_replay(
     replay = embodied.replay.Reverb(length, size, directory)
   elif config.replay == 'chunks':
     replay = embodied.replay.NaiveChunks(length, size, directory)
+  elif config.replay == 'lfs':
+    kw = {}
+    if rate_limit and config.run.train_ratio > 0:
+      kw['samples_per_insert'] = config.run.train_ratio / config.batch_length
+      kw['tolerance'] = 10 * config.batch_size
+      kw['min_size'] = max(config.batch_size, config.envs.amount) * 2
+    kw['batch_size'] = config.batch_size
+    kw['num_buffers'] = config.num_buffers
+    kw['lfs_directory'] = config.lfs_dir
+    kw['use_lfs'] = config.use_lfs
+    kw['unlocked_sampling'] = config.unlocked_sampling
+    replay = embodied.replay.FIFO_LFS(directory, length, size, **kw)
   else:
     raise NotImplementedError(config.replay)
   return replay
@@ -161,7 +191,7 @@ def make_env(config, **overrides):
   ctor = {
       'dummy': 'embodied.envs.dummy:Dummy',
       'gym': 'embodied.envs.from_gym:FromGym',
-      'dm': 'embodied.envs.from_dmenv:FromDM',
+      'dm': 'embodied.envs.from_dm:FromDM',
       'crafter': 'embodied.envs.crafter:Crafter',
       'dmc': 'embodied.envs.dmc:DMC',
       'atari': 'embodied.envs.atari:Atari',
@@ -174,7 +204,10 @@ def make_env(config, **overrides):
     module, cls = ctor.split(':')
     module = importlib.import_module(module)
     ctor = getattr(module, cls)
-  kwargs = config.env.get(suite, {})
+  if config.env.kwargs != '{}':
+    kwargs = yaml.YAML(typ='safe').load(config.env.kwargs)
+  else:
+    kwargs = config.env.get(suite, {})
   kwargs.update(overrides)
   env = ctor(task, **kwargs)
   return wrap_env(env, config)
@@ -199,8 +232,13 @@ def wrap_env(env, config):
   for name, space in env.act_space.items():
     if not space.discrete:
       env = wrappers.ClipAction(env, name)
+  env = wrappers.CountSteps(env)
   return env
 
 
 if __name__ == '__main__':
-  main()
+  try:
+    main()
+  except (mujoco.FatalError, EOFError, RuntimeError) as e:
+    traceback.print_exc()
+    print('Gracefully stopping...')
