@@ -89,10 +89,8 @@ defaults:
   episodic: True
   discount: 0.99
   imag_discount: 0.99
-  imag_unroll: True
   critic_return: gve
   actor_return: gve
-  return_lambda: 0.95
   actor_grad_disc: reinforce
   actor_grad_cont: backprop
   slow_target: True
@@ -114,8 +112,6 @@ defaults:
   critic_slowreg: logprob
   slow_critic_update: 1
   slow_critic_fraction: 0.02
-  retnorm: {impl: perc_ema, decay: 0.99, max: 1.0, perclo: 5.0, perchi: 95.0}
-  actent: 3e-4
   rewnorm_discount: False
 
   # HRL
