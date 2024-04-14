@@ -106,7 +106,7 @@ class CtrlDisag(nj.Module):
     return metrics
 
 
-class PBE(jaxutils.Module):
+class PBE(nj.Module):
 
   def __init__(self, wm, act_space, config):
     self.config = config
