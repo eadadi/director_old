@@ -1,25 +1,29 @@
-import numpy as np
-import tensorflow as tf
-from tensorflow_probability import distributions as tfd
+import jax
+import jax.numpy as jnp
+tree_map = jax.tree_util.tree_map
+sg = lambda x: tree_map(jax.lax.stop_gradient, x)
 
 from . import nets
-from . import tfutils
+from . import jaxutils
+from . import ninjax as nj
 
 
-class Disag(tfutils.Module):
+class Disag(nj.Module):
 
   def __init__(self, wm, act_space, config):
     self.config = config.update({'disag_head.inputs': ['tensor']})
-    self.opt = tfutils.Optimizer('disag', **config.expl_opt)
+    self.opt = jaxutils.Optimizer(name='disag_opt', **config.expl_opt)
     self.inputs = nets.Input(config.disag_head.inputs, dims='deter')
     self.target = nets.Input(self.config.disag_target, dims='deter')
-    self.nets = None
+    self.nets = [
+        nets.MLP(shape=None, **self.config.disag_head, name=f'disag{i}')
+        for i in range(self.config.disag_models)]
 
   def __call__(self, traj):
     self._build(traj)
     inputs = self.inputs(traj)
     preds = [head(inputs).mode() for head in self.nets]
-    disag = tf.math.reduce_std(preds, 0).mean(-1)
+    disag = jnp.math.reduce_std(preds, 0).mean(-1)
     if 'action' in self.config.disag_head.inputs:
       return disag[:-1]
     else:
@@ -28,12 +32,12 @@ class Disag(tfutils.Module):
   def train(self, data):
     # TODO: This can be removed once we change the action alignment in the
     # replay buffer.
-    data = {**data, 'action': tf.concat(
+    data = {**data, 'action': jnp.concat(
         [data['action'][:, 1:], 0 * data['action'][:, :1]], 1)}
     self._build(data)
     inputs = self.inputs(data)[:, :-1]
-    target = self.target(data)[:, 1:].astype(tf.float32)
-    with tf.GradientTape() as tape:
+    target = self.target(data)[:, 1:].astype(jnp.float32)
+    with jnp.GradientTape() as tape:
       preds = [head(inputs) for head in self.nets]
       loss = -sum([pred.log_prob(target).mean() for pred in preds])
     return self.opt(tape, loss, self.nets)
@@ -53,10 +57,10 @@ class LatentVAE(tfutils.Module):
     self.dec = nets.MLP(self.config.rssm.deter, **self.config.expl_dec)
     shape = self.config.expl_enc.shape
     if self.config.expl_enc.dist == 'onehot':
-      self.prior = tfutils.OneHotDist(tf.zeros(shape))
+      self.prior = tfutils.OneHotDist(jnp.zeros(shape))
       self.prior = tfd.Independent(self.prior, len(shape) - 1)
     else:
-      self.prior = tfd.Normal(tf.zeros(shape), tf.ones(shape))
+      self.prior = tfd.Normal(jnp.zeros(shape), jnp.ones(shape))
       self.prior = tfd.Independent(self.prior, len(shape))
     self.kl = tfutils.AutoAdapt(**self.config.expl_kl)
     self.opt = tfutils.Optimizer('disag', **self.config.expl_opt)
@@ -65,7 +69,7 @@ class LatentVAE(tfutils.Module):
 
   def __call__(self, traj):
     dist = self.enc(traj)
-    target = tf.stop_gradient(traj['deter'].astype(tf.float32))
+    target = jnp.stop_gradient(traj['deter'].astype(jnp.float32))
     ll = self.dec(self.flatten(dist.sample())).log_prob(target)
     if self.config.expl_vae_elbo:
       kl = tfd.kl_divergence(dist, self.prior)
@@ -76,8 +80,8 @@ class LatentVAE(tfutils.Module):
 
   def train(self, data):
     metrics = {}
-    target = tf.stop_gradient(data['deter'].astype(tf.float32))
-    with tf.GradientTape() as tape:
+    target = jnp.stop_gradient(data['deter'].astype(jnp.float32))
+    with jnp.GradientTape() as tape:
       dist = self.enc(data)
       kl = tfd.kl_divergence(dist, self.prior)
       kl, mets = self.kl(kl)
@@ -105,7 +109,7 @@ class CtrlDisag(tfutils.Module):
 
   def train(self, data):
     metrics = {}
-    with tf.GradientTape() as tape:
+    with jnp.GradientTape() as tape:
       ctrl = self.embed(data).mode()
       dist = self.head({'current': ctrl[:, :-1], 'next': ctrl[:, 1:]})
       loss = -dist.log_prob(data['action'][:, 1:]).mean()
@@ -123,11 +127,11 @@ class PBE(tfutils.Module):
   def __call__(self, traj):
     feat = self.inputs(traj)
     flat = feat.reshape([-1, feat.shape[-1]])
-    dists = tf.norm(
+    dists = jnp.norm(
         flat[:, None, :].reshape((len(flat), 1, -1)) -
         flat[None, :, :].reshape((1, len(flat), -1)), axis=-1)
-    rew = -tf.math.top_k(-dists, self.config.pbe_knn, sorted=True)[0].mean(-1)
-    return rew.reshape(feat.shape[:-1]).astype(tf.float32)
+    rew = -jnp.math.top_k(-dists, self.config.pbe_knn, sorted=True)[0].mean(-1)
+    return rew.reshape(feat.shape[:-1]).astype(jnp.float32)
 
   def train(self, data):
     return {}
