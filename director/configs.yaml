@@ -4,8 +4,13 @@ defaults:
   method: name
   task: dummy_disc
   logdir: /dev/null
-  replay: uniform
-  replay_size: 1e6
+  replay_dir: none
+  checkpoint_dir: none
+  lfs_dir: none
+  use_lfs: False
+  replay: lfs
+  replay_size: 1e7
+  wdb_name: eadadiML
   replay_online: False
   eval_dir: ''
   filter: '.*'
@@ -24,6 +29,7 @@ defaults:
 
   run:
     script: train
+    profile_path: none
     steps: 1e10
     expl_until: 0
     log_every: 300
@@ -36,7 +42,8 @@ defaults:
     train_fill: 0
     eval_fill: 0
     log_zeros: False
-    log_keys_video: [image]
+    slurm_job: none
+    log_keys_video: [none] # change this to [image] to vis episodes
     log_keys_sum: '^$'
     log_keys_mean: '(log_entropy)'
     log_keys_max: '^$'
@@ -54,17 +61,20 @@ defaults:
     minecraft: {size: [64, 64], break_speed: 100.0}
     dmc: {size: [64, 64], repeat: 2, camera: -1}
     loconav: {size: [64, 64], repeat: 2, camera: -1}
+    kwargs: '{}'
 
   # Agent
   task_behavior: Greedy
   expl_behavior: None
-  batch_size: 16
-  batch_length: 64
-  data_loaders: 8
+  batch_size: 4
+  batch_length: 1024
+  data_loaders: 16
+  num_buffers: 2
+  unlocked_sampling: False
 
   # World Model
   grad_heads: [decoder, reward, cont]
-  rssm: {deter: 4096, units: 1024, stoch: 32, classes: 32, act: silu, norm: layer, initial: learned, unimix: 0.01, unroll: False, action_clip: 1.0, winit: normal, fan: avg}
+  rssm: {deter: 4096, units: 1024, hidden: 128, stoch: 32, classes: 32, act: silu, norm: layer, initial: learned, unimix: 0.01, unroll: True, action_clip: 1.0, winit: normal, fan: avg, nonrecurrent_enc: True}
   encoder: {mlp_keys: '.*', cnn_keys: '.*', act: silu, norm: layer, mlp_layers: 5, mlp_units: 1024, cnn: resnet, cnn_depth: 96, cnn_blocks: 0, resize: stride, winit: normal, fan: avg, symlog_inputs: True, minres: 4}
   decoder: {mlp_keys: '.*', cnn_keys: '.*', act: silu, norm: layer, mlp_layers: 5, mlp_units: 1024, cnn: resnet, cnn_depth: 96, cnn_blocks: 0, image_dist: mse, vector_dist: symlog_mse, inputs: [deter, stoch], resize: stride, winit: normal, fan: avg, outscale: 1.0, minres: 4, cnn_sigmoid: False}
   reward_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: symlog_disc, outscale: 0.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg, bins: 255}
@@ -73,10 +83,12 @@ defaults:
   dyn_loss: {impl: kl, free: 1.0}
   rep_loss: {impl: kl, free: 1.0}
   model_opt: {opt: adam, lr: 1e-4, eps: 1e-8, clip: 1000.0, wd: 0.0, warmup: 0, lateclip: 0.0}
+  model_opt_groups: {group1: {lr: 1e-4, wd: 0}}
+  model_opt_group_keys: {group1: 'Lambda_re|Lambda_im|B|C|D|log_step'}
 
   # Actor Critic
-  actor: {layers: 5, units: 1024, act: silu, norm: layer, minstd: 0.1, maxstd: 1.0, outscale: 1.0, outnorm: False, unimix: 0.01, inputs: [deter, stoch], winit: normal, fan: avg, symlog_inputs: False}
-  critic: {layers: 5, units: 1024, act: silu, norm: layer, dist: symlog_disc, outscale: 0.0, outnorm: False, inputs: [deter, stoch], winit: normal, fan: avg, bins: 255, symlog_inputs: False}
+  actor: {layers: 5, units: 1024, act: silu, norm: layer, minstd: 0.1, maxstd: 1.0, outscale: 1.0, outnorm: False, unimix: 0.01, inputs: [deter, stoch, hidden], winit: normal, fan: avg, symlog_inputs: False}
+  critic: {layers: 5, units: 1024, act: silu, norm: layer, dist: symlog_disc, outscale: 0.0, outnorm: False, inputs: [deter, stoch, hidden], winit: normal, fan: avg, bins: 255, symlog_inputs: False}
   actor_opt: {opt: adam, lr: 3e-5, eps: 1e-5, clip: 100.0, wd: 0.0, warmup: 0, lateclip: 0.0}
   critic_opt: {opt: adam, lr: 3e-5, eps: 1e-5, clip: 100.0, wd: 0.0, warmup: 0, lateclip: 0.0}
   actor_dist_disc: onehot
@@ -85,7 +97,7 @@ defaults:
   actor_grad_cont: backprop
   critic_type: vfunction
   imag_horizon: 15
-  imag_unroll: False
+  imag_unroll: True
   horizon: 333
   return_lambda: 0.95
   critic_slowreg: logprob
@@ -100,7 +112,27 @@ defaults:
   disag_head: {layers: 5, units: 1024, act: silu, norm: layer, dist: mse, outscale: 1.0, inputs: [deter, stoch, action], winit: normal, fan: avg}
   disag_target: [stoch]
   disag_models: 8
-
+  # SSM
+  ssm_type: mimo
+  ssm_cell:
+    reset_mode: init
+    n_blocks: 8 # this is the num of DPLR blocks, not layer num
+    C_init: trunc_standard_normal
+    conj_sym: False
+    discretization: bilinear
+    clip_eigs: False
+    dt_min: 0.001
+    dt_max: 0.1
+  ssm: 
+    n_layers: 4 
+    prenorm: False
+    mlp: True
+    glu: True
+    dropout: 0.0
+    parallel: True
+    conv: False
+    use_norm: True
+ 
 minecraft:
 
   task: minecraft_diamond
@@ -168,6 +200,7 @@ dmc_vision:
 
   task: dmc_walker_walk
   run.train_ratio: 512
+  run.steps: 1e6
   rssm.deter: 512
   .*\.cnn_depth: 32
   .*\.layers: 2
@@ -180,6 +213,7 @@ dmc_proprio:
   task: dmc_walker_walk
   run.train_ratio: 512
   rssm.deter: 512
+  run.steps: 5e5
   .*\.cnn_depth: 32
   .*\.layers: 2
   .*\.units: 512
@@ -192,11 +226,22 @@ bsuite:
   envs: {amount: 1, parallel: none}
   run:
     script: train
-    train_ratio: 1024  # 128 for cartpole
-  rssm.deter: 512
+    train_ratio: 64
+    steps: 2e8
+  rssm.deter: 1024
+  encoder.mlp_layers: 1
+  decoder.mlp_layers: 1
+  encoder.mlp_units: 512
+  decoder.mlp_units: 512
+  actor.inputs: [stoch, hidden]
+  critic.inputs: [stoch, hidden]
+  ssm.n_layers: 3
+  rssm.units: 1024
   .*\.cnn_depth: 32
   .*\.layers: 2
   .*\.units: 512
+  encoder: {mlp_keys: 'observation', cnn_keys: '$^'}
+  decoder: {mlp_keys: 'observation', cnn_keys: '$^'}
 
 loconav:
 
@@ -208,28 +253,44 @@ loconav:
   encoder: {mlp_keys: '.*', cnn_keys: 'image'}
   decoder: {mlp_keys: '.*', cnn_keys: 'image'}
 
+tiny:
+  rssm.deter: 200
+  .*\.cnn_depth: 32
+  .*\.units: 200
+  .*\.mlp_units: 200
+  .*\.mlp_layers: 2
+  .*\.layers: 2
+
 small:
   rssm.deter: 512
   .*\.cnn_depth: 32
   .*\.units: 512
+  .*\.mlp_units: 512
+  .*\.mlp_layers: 2
   .*\.layers: 2
 
 medium:
   rssm.deter: 1024
   .*\.cnn_depth: 48
   .*\.units: 640
+  .*\.mlp_units: 640
+  .*\.mlp_layers: 3
   .*\.layers: 3
 
 large:
   rssm.deter: 2048
   .*\.cnn_depth: 64
   .*\.units: 768
+  .*\.mlp_units: 768
+  .*\.mlp_layers: 4
   .*\.layers: 4
 
 xlarge:
   rssm.deter: 4096
   .*\.cnn_depth: 96
   .*\.units: 1024
+  .*\.mlp_units: 1024
+  .*\.mlp_layers: 5
   .*\.layers: 5
 
 multicpu:
