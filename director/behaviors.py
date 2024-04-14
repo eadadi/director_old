@@ -16,8 +16,8 @@ class Greedy(nj.Module):
     rewfn = lambda s: wm.heads['reward'](s).mean()[1:]
     if config.critic_type == 'vfunction':
       critics = {'extr': agent.VFunction(rewfn, config, name='critic')}
-    elif config.critic_type == 'qfunction':
-      critics = {'extr': agent.QFunction(rewfn, config, name='critic')}
+    else:
+      raise NotImplementedError(config.critic_type)
     self.ac = agent.ImagActorCritic(
         critics, {'extr': 1.0}, act_space, config, name='ac')
 
@@ -64,9 +64,6 @@ class Explore(nj.Module):
 
   REWARDS = {
       'disag': expl.Disag,
-      'vae': expl.LatentVAE,
-      'ctrl': expl.CtrlDisag,
-      'pbe': expl.PBE,
   }
 
   def __init__(self, wm, act_space, config):
@@ -80,12 +77,10 @@ class Explore(nj.Module):
         rewfn = lambda s: wm.heads['reward'](s).mean()[1:]
         critics[key] = agent.VFunction(rewfn, config, name=key)
       else:
-        reward = self.REWARDS[key](wm, act_space, config, name=key + '_reward')
-        critics[key] = agent.VFunction(reward, config.update(
-            discount=config.expl_discount,
-            retnorm=config.expl_retnorm,
-        ), name=key)
-        self.rewards[key] = reward
+        rewfn = self.REWARDS[key](
+            wm, act_space, config, name=key + '_reward')
+        critics[key] = agent.VFunction(rewfn, config, name=key)
+        self.rewards[key] = rewfn
     scales = {k: v for k, v in config.expl_rewards.items() if v}
     self.ac = agent.ImagActorCritic(
         critics, scales, act_space, config, name='ac')

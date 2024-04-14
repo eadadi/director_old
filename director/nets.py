@@ -367,7 +367,7 @@ class MultiDecoder(nj.Module):
         if re.match(cnn_keys, k) and len(v) == 3}
     self.mlp_shapes = {
         k: v for k, v in shapes.items()
-        if re.match(mlp_keys, k) and len(v) in (1, 2)}
+        if re.match(mlp_keys, k) and len(v) == 1}
     self.shapes = {**self.cnn_shapes, **self.mlp_shapes}
     print('Decoder CNN shapes:', self.cnn_shapes)
     print('Decoder MLP shapes:', self.mlp_shapes)
@@ -746,11 +746,9 @@ class Input:
     values = [inputs[k] for k in self._keys]
     dims = len(inputs[self._dims].shape)
     for i, value in enumerate(values):
-      if values[i].dtype == jnp.complex64:
-        values[i] = jnp.stack([values[i].real, values[i].imag], axis=-1)
-      if len(values[i].shape) > dims:
-        values[i] = values[i].reshape(
-            values[i].shape[:dims - 1] + (np.prod(values[i].shape[dims - 1:]),))
+      if len(value.shape) > dims:
+        values[i] = value.reshape(
+            value.shape[:dims - 1] + (np.prod(value.shape[dims - 1:]),))
     values = [x.astype(inputs[self._dims].dtype) for x in values]
     return jnp.concatenate(values, -1)
 

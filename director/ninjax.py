@@ -483,12 +483,8 @@ class FlaxModule(Module):
     self.module = ctor(*args, **kwargs)
 
   def __call__(self, *args, **kwargs):
-    init_kwargs = {k: v for k, v in kwargs.items() if k != 'mutable'}
-    init_kwargs['training'] = False
-    drop_rng = rng()
-    state = self.get('state', self.module.init, 
-                     {'params': rng(), 'dropout': drop_rng}, *args, **init_kwargs)
-    return self.module.apply(state, *args, rngs={'dropout': drop_rng}, **kwargs)
+    state = self.get('state', self.module.init, rng(), *args, **kwargs)
+    return self.module.apply(state, *args, **kwargs)
 
 
 class OptaxModule(Module):

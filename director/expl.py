@@ -36,7 +36,6 @@ class Disag(nj.Module):
       losses.append(-net(inp).log_prob(tar).mean())
     return jnp.array(losses).sum()
 
-
 class LatentVAE(nj.Module):
 
   def __init__(self, wm, act_space, config):
