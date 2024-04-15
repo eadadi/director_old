@@ -64,7 +64,7 @@ defaults:
     kwargs: '{}'
 
   # Agent
-  task_behavior: Greedy
+  task_behavior: Hierarchy
   expl_behavior: None
   batch_size: 4
   batch_length: 1024
