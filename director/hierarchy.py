@@ -63,9 +63,9 @@ class Hierarchy(nj.Module):
     self.feat = nets.Input(['deter'])
     self.goal_shape = (self.config.rssm.deter,)
     self.enc = nets.MLP(
-        config.skill_shape, dims='context', **config.goal_encoder)
+        config.skill_shape, dims='context', **config.goal_encoder, name='mlp')
     self.dec = nets.MLP(
-        self.goal_shape, dims='context', **self.config.goal_decoder)
+        self.goal_shape, dims='context', **self.config.goal_decoder, name='mlp')
     self.kl = jaxutils.AutoAdapt((), **self.config.encdec_kl)
     self.opt = jaxutils.Optimizer('goal', **config.encdec_opt)
 
