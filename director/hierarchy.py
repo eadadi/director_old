@@ -67,7 +67,7 @@ class Hierarchy(nj.Module):
     self.dec = nets.MLP(
         self.goal_shape, dims='context', **self.config.goal_decoder, name='mlp')
     self.kl = jaxutils.AutoAdapt((), **self.config.encdec_kl)
-    self.opt = jaxutils.Optimizer('goal', **config.encdec_opt)
+    self.opt = jaxutils.Optimizer('goal', **config.encdec_opt, name='opt')
 
   def initial(self, batch_size):
     return {
