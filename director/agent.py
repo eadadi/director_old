@@ -33,7 +33,7 @@ class Agent(nj.Module):
     self.step = step
     self.wm = WorldModel(obs_space, act_space, config, name='wm')
     self.task_behavior = getattr(behaviors, config.task_behavior)(
-        self.wm, self.act_space, self.config, name='task_behavior')
+        self.wm, self.act_space, self.config)
     if config.expl_behavior == 'None':
       self.expl_behavior = self.task_behavior
     else:
