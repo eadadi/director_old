@@ -13,6 +13,9 @@ from . import jaxutils
 from . import nets
 from . import tfutils
 
+import jax
+sg = jax.lax.stop_gradient
+
 
 class Hierarchy(tfutils.Module):
 
@@ -241,8 +244,9 @@ class Hierarchy(tfutils.Module):
       goal = context = feat
     with tf.GradientTape() as tape:
       enc = self.enc({'goal': goal, 'context': context})
-      dec = self.dec({'skill': enc.sample(seed=nj.rng()), 'context': context})
-      rec = -dec.log_prob(tf.stop_gradient(goal))
+      sample = enc.sample(seed=nj.rng())
+      dec = self.dec({'skill': sample, 'context': context})
+      rec = -dec.log_prob(sg(goal))
       if self.config.goal_kl:
         kl = tfd.kl_divergence(enc, self.prior)
         kl, mets = self.kl(kl)
