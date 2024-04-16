@@ -241,7 +241,8 @@ class Hierarchy(tfutils.Module):
       goal = context = feat
     with tf.GradientTape() as tape:
       enc = self.enc({'goal': goal, 'context': context})
-      dec = self.dec({'skill': enc.sample(), 'context': context})
+      stoch = dist.sample(seed=nj.rng())
+      dec = self.dec({'skill': enc.sample(), 'context': context, 'stoch': stoch})
       rec = -dec.log_prob(tf.stop_gradient(goal))
       if self.config.goal_kl:
         kl = tfd.kl_divergence(enc, self.prior)
