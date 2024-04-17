@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-    $1="tiny atari"
+    config="tiny atari"
 else
     config="$1"
 fi
@@ -14,5 +14,5 @@ fi
 
 python3 director/train.py \
 	--logdir /logdir/$(date +%Y%m%d-%H%M%S) \
-	--configs=${config} \
-	--task=${task}
+	--configs=$config \
+	--task=$task
