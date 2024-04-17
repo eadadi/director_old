@@ -11,6 +11,9 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from tensorflow.keras import mixed_precision as prec
 from tensorflow_probability import distributions as tfd
+import jax
+import jax.numpy as jnp
+sg = jax.lax.stop_gradient
 
 try:
   from tensorflow.python.distribute import values
@@ -467,11 +470,11 @@ class AutoAdapt(Module):
     self._inverse = inverse
     self._thres = thres
     if self._impl == 'fixed':
-      self._scale = tf.tensor(scale)
+      self._scale = nj.tensor(scale)
     elif self._impl == 'mult':
-      self._scale = tf.Variable(tf.ones(shape, tf.float32), trainable=False)
+      self._scale = nj.Variable(nj.ones(shape, nj.float32), trainable=False)
     elif self._impl == 'prop':
-      self._scale = tf.Variable(tf.ones(shape, tf.float32), trainable=False)
+      self._scale = nj.Variable(nj.ones(shape, nj.float32), trainable=False)
     else:
       raise NotImplementedError(self._impl)
 
@@ -493,7 +496,7 @@ class AutoAdapt(Module):
       scale = self._scale
     else:
       raise NotImplementedError(self._impl)
-    return tf.stop_gradient(tf.tensor(scale))
+    return sg(nj.tensor(scale))
 
   def update(self, reg):
     avg = reg.mean(list(range(len(reg.shape) - len(self._shape))))
@@ -506,15 +509,15 @@ class AutoAdapt(Module):
         below, above = above, below
       inside = ~below & ~above
       adjusted = (
-          above.astype(tf.float32) * self._scale * (1 + self._vel) +
-          below.astype(tf.float32) * self._scale / (1 + self._vel) +
-          inside.astype(tf.float32) * self._scale)
-      self._scale.assign(tf.clip_by_value(adjusted, self._min, self._max))
+          above * self._scale * (1 + self._vel) +
+          below * self._scale / (1 + self._vel) +
+          inside * self._scale)
+      self._scale.assign(nj.clip(adjusted, self._min, self._max))
     elif self._impl == 'prop':
       direction = avg - self._target
       if self._inverse:
         direction = -direction
-      self._scale.assign(tf.clip_by_value(
+      self._scale.assign(nj.clip(
           self._scale + self._vel * direction, self._min, self._max))
     else:
       raise NotImplementedError(self._impl)
